@@ -134,25 +134,31 @@ class ReliableListenerIntegrationTest {
 		assertEquals(0, messageCount(topology.deadLetterQueue(topology.getQueues().getVoucher())));
 	}
 
+	/**
+	 * H6 evidence: publish → consumer fails → NACK without requeue → message lands in DLQ with x-death.
+	 */
 	@Test
 	void failedEmailIsNackedAndRoutedToItsDeadLetterQueue() throws Exception {
 		long attemptsBefore = dlqRateMeter.attempts();
 		long deadBefore = dlqRateMeter.deadLetters();
+		String emailQueue = topology.getQueues().getEmail();
+		String emailDlq = topology.deadLetterQueue(emailQueue);
 		doThrow(new IllegalStateException("mail gateway down")).when(guestNotificationSender).send(any());
 
 		publisher.publish(email("event-email-fail", "CONFIRMATION"));
 
-		awaitCount(topology.deadLetterQueue(topology.getQueues().getEmail()), 1);
-		assertEquals(0, messageCount(topology.getQueues().getEmail()));
+		awaitCount(emailDlq, 1);
+		assertEquals(0, messageCount(emailQueue), "main queue must be empty (NACK requeue=false)");
+		assertEquals(1, messageCount(emailDlq), "rejected message must be in the email DLQ");
 		assertEquals(attemptsBefore + 1, dlqRateMeter.attempts());
 		assertEquals(deadBefore + 1, dlqRateMeter.deadLetters());
-		assertTrue(dlqRateMeter.deadLetters(topology.getQueues().getEmail()) >= 1);
+		assertTrue(dlqRateMeter.deadLetters(emailQueue) >= 1);
 		assertTrue(dlqRateMeter.rate() > 0d);
 
 		try (Channel channel = connectionFactory.createConnection().createChannel(false)) {
-			GetResponse dead = channel.basicGet(topology.deadLetterQueue(topology.getQueues().getEmail()), true);
-			assertNotNull(dead);
-			assertNotNull(dead.getProps().getHeaders().get("x-death"));
+			GetResponse dead = channel.basicGet(emailDlq, true);
+			assertNotNull(dead, "DLQ must contain the rejected envelope");
+			assertNotNull(dead.getProps().getHeaders().get("x-death"), "broker must stamp x-death on dead-lettered messages");
 			assertTrue(new String(dead.getBody(), StandardCharsets.UTF_8).contains("event-email-fail"));
 		}
 	}
