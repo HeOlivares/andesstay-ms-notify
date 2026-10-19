@@ -1,0 +1,24 @@
+﻿
+[INFO] Building andesstay-ms-notify 0.0.1-SNAPSHOT
+releases of the JDK. Please add Mockito as an agent to your build what is described in Mockito's documentation: 
++ .\mvnw.cmd "-Dtest=ReliableListenerIntegrationTest#failedEmailIsNacke ...
+    + FullyQualifiedErrorId : NativeCommandError
+04:29:14.368 [main] WARN cl.duoc.andesstay.notify.messaging.ReliableDelivery -- NACK without requeue: 
+eventId=event-retry queue=q.cmd.email dlq=q.cmd.email.dlq deliveryTag=3 reason=java.lang.IllegalStateException: 
+temporary
+04:29:14.381 [main] WARN cl.duoc.andesstay.notify.messaging.ReliableDelivery -- NACK without requeue: eventId=bad 
+queue=q.cmd.email dlq=q.cmd.email.dlq deliveryTag=2 reason=java.lang.IllegalStateException: send failed
+04:29:14.391 [main] WARN cl.duoc.andesstay.notify.messaging.ReliableDelivery -- NACK without requeue: eventId=event-2 
+queue=q.cmd.housekeeping dlq=q.cmd.housekeeping.dlq deliveryTag=8 reason=java.lang.IllegalStateException: housekeeping 
+unavailable
+[INFO] Tests run: 7, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 2.666 s -- in 
+cl.duoc.andesstay.notify.messaging.ReliableDeliveryTest
+2026-10-19T04:29:39.220-03:00  WARN 19840 --- [andesstay-ms-notify] [ntContainer#0-1] 
+c.d.a.notify.messaging.ReliableDelivery  : NACK without requeue: eventId=event-email-fail queue=q.cmd.email 
+dlq=q.cmd.email.dlq deliveryTag=1 reason=java.lang.IllegalStateException: mail gateway down
+[INFO] Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 25.58 s -- in 
+cl.duoc.andesstay.notify.messaging.ReliableListenerIntegrationTest
+[INFO] Tests run: 8, Failures: 0, Errors: 0, Skipped: 0
+[INFO] BUILD SUCCESS
+
+

@@ -89,3 +89,30 @@ Limitación: el almacenamiento es local al proceso. Con varias réplicas, dos in
 ```
 
 Requiere Docker Desktop para las pruebas de integración con Testcontainers (`ReliableListenerIntegrationTest`). Esas pruebas publican en RabbitMQ real, esperan el ACK de los listeners y, ante fallo, consumen la DLQ correspondiente.
+
+## Evidencia DLQ (H6)
+
+Flujo verificable:
+
+1. Se publica un `NotificationEnvelope` a `q.cmd.email` (`email.send`).
+2. El `@RabbitListener` ejecuta el trabajo; el sender lanza error (`mail gateway down`).
+3. `ReliableDelivery` hace `basicNack(deliveryTag, false, false)` (sin requeue) y escribe un log `WARN`:
+   `NACK without requeue: eventId=... queue=q.cmd.email dlq=q.cmd.email.dlq ...`.
+4. RabbitMQ enruta el mensaje a `q.cmd.email.dlq` con header `x-death`.
+5. La cola principal queda vacía; la métrica `GET /api/notify/metrics/dlq` incrementa `deadLetters`.
+
+### Test de integración (evidencia automatizada)
+
+```bash
+.\mvnw.cmd -Dtest=ReliableListenerIntegrationTest#failedEmailIsNackedAndRoutedToItsDeadLetterQueue test
+```
+
+El método `failedEmailIsNackedAndRoutedToItsDeadLetterQueue` demuestra contra RabbitMQ real (Testcontainers):
+
+- publish → fallo del consumidor
+- cola principal vacía (sin requeue)
+- 1 mensaje en `q.cmd.email.dlq`
+- header `x-death` presente
+- body con el `eventId` fallido
+
+También existe `failedHousekeepingAndVoucherReachTheirDeadLetterQueues` para las otras DLQ.
