@@ -20,6 +20,12 @@ public class RabbitTopologyConfig {
 	public static final String DIRECT_EXCHANGE = "cmd.direct";
 	public static final String TOPIC_EXCHANGE = "cmd.topic";
 	public static final String DEAD_EXCHANGE = "cmd.dead.dlx";
+	public static final String EMAIL_QUEUE = "q.cmd.email";
+	public static final String HOUSEKEEPING_QUEUE = "q.cmd.housekeeping";
+	public static final String VOUCHER_QUEUE = "q.cmd.voucher";
+	public static final String EMAIL_ROUTING_KEY = "email.send";
+	public static final String HOUSEKEEPING_ROUTING_KEY = "housekeeping.ticket";
+	public static final String VOUCHER_ROUTING_KEY = "voucher.gen";
 
 	@Bean
 	public Declarables andesStayTopology() {
@@ -30,9 +36,9 @@ public class RabbitTopologyConfig {
 		declarables.add(direct);
 		declarables.add(topic);
 		declarables.add(dead);
-		addFlow(declarables, direct, topic, dead, "q.cmd.email", "email.send", "email.*");
-		addFlow(declarables, direct, topic, dead, "q.cmd.housekeeping", "housekeeping.ticket", "housekeeping.#");
-		addFlow(declarables, direct, topic, dead, "q.cmd.voucher", "voucher.gen", "voucher.*");
+		addFlow(declarables, direct, topic, dead, EMAIL_QUEUE, EMAIL_ROUTING_KEY, "email.*");
+		addFlow(declarables, direct, topic, dead, HOUSEKEEPING_QUEUE, HOUSEKEEPING_ROUTING_KEY, "housekeeping.#");
+		addFlow(declarables, direct, topic, dead, VOUCHER_QUEUE, VOUCHER_ROUTING_KEY, "voucher.*");
 		return new Declarables(declarables);
 	}
 
