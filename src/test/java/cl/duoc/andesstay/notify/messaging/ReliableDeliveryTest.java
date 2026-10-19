@@ -7,6 +7,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 
+import cl.duoc.andesstay.notify.config.RabbitTopologyProperties;
 import com.rabbitmq.client.Channel;
 import java.time.Clock;
 import java.time.Duration;
@@ -24,11 +25,13 @@ class ReliableDeliveryTest {
 	private DlqRateMeter meter;
 	private ReliableDelivery delivery;
 	private Channel channel;
+	private RabbitTopologyProperties topology;
 
 	@BeforeEach
 	void setUp() {
 		meter = new DlqRateMeter();
-		delivery = new ReliableDelivery(new ProcessedEventIds(ProcessedEventIds.DEFAULT_TTL), meter);
+		topology = RabbitTopologyProperties.defaults();
+		delivery = new ReliableDelivery(new ProcessedEventIds(ProcessedEventIds.DEFAULT_TTL), meter, topology);
 		channel = mock(Channel.class);
 	}
 

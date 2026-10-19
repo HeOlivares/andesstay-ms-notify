@@ -6,7 +6,6 @@ import static org.mockito.Mockito.verify;
 
 import cl.duoc.andesstay.notify.messaging.NotificationEnvelope;
 import cl.duoc.andesstay.notify.messaging.NotificationPublisher;
-import cl.duoc.andesstay.notify.messaging.ReliableDelivery;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.List;
 import org.junit.jupiter.api.Test;
@@ -34,6 +33,9 @@ class RabbitTopologyTest {
 	private Declarables topology;
 
 	@Autowired
+	private RabbitTopologyProperties names;
+
+	@Autowired
 	private MockMvc mockMvc;
 
 	@Autowired
@@ -55,18 +57,33 @@ class RabbitTopologyTest {
 
 	@Test
 	void declaresAndesStayExchangesQueuesAndDeadLetters() {
-		assertEquals(List.of("cmd.direct", "cmd.topic", "cmd.dead.dlx"), exchangeNames());
-		assertQueueWithDlq("q.cmd.email", "email.send", "email.*");
-		assertQueueWithDlq("q.cmd.housekeeping", "housekeeping.ticket", "housekeeping.#");
-		assertQueueWithDlq("q.cmd.voucher", "voucher.gen", "voucher.*");
+		assertEquals(
+				List.of(
+						names.getExchanges().getDirect(),
+						names.getExchanges().getTopic(),
+						names.getExchanges().getDead()),
+				exchangeNames());
+		assertQueueWithDlq(
+				names.getQueues().getEmail(),
+				names.getRoutingKeys().getEmail(),
+				names.getTopicPatterns().getEmail());
+		assertQueueWithDlq(
+				names.getQueues().getHousekeeping(),
+				names.getRoutingKeys().getHousekeeping(),
+				names.getTopicPatterns().getHousekeeping());
+		assertQueueWithDlq(
+				names.getQueues().getVoucher(),
+				names.getRoutingKeys().getVoucher(),
+				names.getTopicPatterns().getVoucher());
 	}
 
 	@Test
 	void publishedEventCarriesTheEnvelope() throws Exception {
-		NotificationEnvelope envelope = NotificationEnvelope.create("email.send", "trace-1", "corr-1", null);
+		NotificationEnvelope envelope =
+				NotificationEnvelope.create(names.getRoutingKeys().getEmail(), "trace-1", "corr-1", null);
 		publisher.publish(envelope);
 
-		verify(rabbitTemplate).convertAndSend("cmd.direct", "email.send", envelope);
+		verify(rabbitTemplate).convertAndSend(names.getExchanges().getDirect(), names.getRoutingKeys().getEmail(), envelope);
 		String json = objectMapper.writeValueAsString(envelope);
 		assertFalse(json.contains("\"type\":\"\""));
 		for (String field : List.of("type", "eventId", "timestamp", "traceId", "correlationId")) {
@@ -74,16 +91,24 @@ class RabbitTopologyTest {
 		}
 	}
 
+	@Test
+	void topologyNamesAreBoundFromApplicationYml() {
+		assertEquals("cmd.direct", names.getExchanges().getDirect());
+		assertEquals("q.cmd.email", names.getQueues().getEmail());
+		assertEquals("email.send", names.getRoutingKeys().getEmail());
+		assertEquals(".dlq", names.getDlqSuffix());
+	}
+
 	private void assertQueueWithDlq(String queueName, String directKey, String topicPattern) {
 		Queue queue = queue(queueName);
-		Queue dlq = queue(queueName + ".dlq");
-		assertEquals("cmd.dead.dlx", queue.getArguments().get("x-dead-letter-exchange"));
-		assertEquals(ReliableDelivery.deadLetterQueue(queueName), queue.getArguments().get("x-dead-letter-routing-key"));
+		Queue dlq = queue(names.deadLetterQueue(queueName));
+		assertEquals(names.getExchanges().getDead(), queue.getArguments().get("x-dead-letter-exchange"));
+		assertEquals(names.deadLetterQueue(queueName), queue.getArguments().get("x-dead-letter-routing-key"));
 		assertEquals(dlq.getName(), queue.getArguments().get("x-dead-letter-routing-key"));
 		assertFalse(dlq.getArguments().containsKey("x-dead-letter-exchange"));
-		assertEquals(1, bindings(queueName, "cmd.direct", directKey).size());
-		assertEquals(1, bindings(queueName, "cmd.topic", topicPattern).size());
-		assertEquals(1, bindings(dlq.getName(), "cmd.dead.dlx", dlq.getName()).size());
+		assertEquals(1, bindings(queueName, names.getExchanges().getDirect(), directKey).size());
+		assertEquals(1, bindings(queueName, names.getExchanges().getTopic(), topicPattern).size());
+		assertEquals(1, bindings(dlq.getName(), names.getExchanges().getDead(), dlq.getName()).size());
 	}
 
 	private List<String> exchangeNames() {

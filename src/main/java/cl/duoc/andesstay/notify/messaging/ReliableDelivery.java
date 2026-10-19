@@ -1,5 +1,6 @@
 package cl.duoc.andesstay.notify.messaging;
 
+import cl.duoc.andesstay.notify.config.RabbitTopologyProperties;
 import com.rabbitmq.client.Channel;
 import java.io.IOException;
 import java.util.List;
@@ -11,15 +12,20 @@ public class ReliableDelivery {
 
 	private final ProcessedEventIds processedEventIds;
 	private final DlqRateMeter dlqRateMeter;
+	private final RabbitTopologyProperties topology;
 	private final List<String> deadLetterQueues = new CopyOnWriteArrayList<>();
 
-	public ReliableDelivery(ProcessedEventIds processedEventIds, DlqRateMeter dlqRateMeter) {
+	public ReliableDelivery(
+			ProcessedEventIds processedEventIds,
+			DlqRateMeter dlqRateMeter,
+			RabbitTopologyProperties topology) {
 		this.processedEventIds = processedEventIds;
 		this.dlqRateMeter = dlqRateMeter;
+		this.topology = topology;
 	}
 
-	public static String deadLetterQueue(String queue) {
-		return queue + ".dlq";
+	public String deadLetterQueue(String queue) {
+		return topology.deadLetterQueue(queue);
 	}
 
 	public DeliveryResult consume(String queue, NotificationEnvelope envelope, Channel channel, long deliveryTag, Runnable work)

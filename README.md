@@ -24,13 +24,21 @@ Health: `GET /api/notify/health`
 
 ## Topología
 
-Exchanges: `cmd.direct`, `cmd.topic`, `cmd.dead.dlx`.
+Los nombres de exchanges, colas, routing keys, topic patterns y sufijo DLQ viven en un solo lugar:
+
+`andesstay.notify.topology.*` dentro de `src/main/resources/application.yml`.
+
+`RabbitTopologyConfig` solo declara beans leyendo `RabbitTopologyProperties`. Los productores y consumidores no hardcodean esos nombres.
+
+Defaults actuales:
 
 | Cola | Routing direct | DLQ |
 | --- | --- | --- |
 | `q.cmd.email` | `email.send` | `q.cmd.email.dlq` |
 | `q.cmd.housekeeping` | `housekeeping.ticket` | `q.cmd.housekeeping.dlq` |
 | `q.cmd.voucher` | `voucher.gen` | `q.cmd.voucher.dlq` |
+
+Exchanges: `cmd.direct`, `cmd.topic`, `cmd.dead.dlx`.
 
 ## ACK / NACK
 

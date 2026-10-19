@@ -1,6 +1,6 @@
 package cl.duoc.andesstay.notify.messaging;
 
-import cl.duoc.andesstay.notify.config.RabbitTopologyConfig;
+import cl.duoc.andesstay.notify.config.RabbitTopologyProperties;
 import cl.duoc.andesstay.notify.delivery.GuestNotificationService;
 import com.rabbitmq.client.Channel;
 import java.io.IOException;
@@ -14,19 +14,24 @@ public class EmailQueueConsumer {
 
 	private final GuestNotificationService guestNotifications;
 	private final ReliableDelivery delivery;
+	private final RabbitTopologyProperties topology;
 
-	public EmailQueueConsumer(GuestNotificationService guestNotifications, ReliableDelivery delivery) {
+	public EmailQueueConsumer(
+			GuestNotificationService guestNotifications,
+			ReliableDelivery delivery,
+			RabbitTopologyProperties topology) {
 		this.guestNotifications = guestNotifications;
 		this.delivery = delivery;
+		this.topology = topology;
 	}
 
-	@RabbitListener(queues = RabbitTopologyConfig.EMAIL_QUEUE, ackMode = "MANUAL")
+	@RabbitListener(queues = "${andesstay.notify.topology.queues.email}", ackMode = "MANUAL")
 	public void onMessage(
 			NotificationEnvelope envelope,
 			Channel channel,
 			@Header(AmqpHeaders.DELIVERY_TAG) long deliveryTag) throws IOException {
 		delivery.consume(
-				RabbitTopologyConfig.EMAIL_QUEUE,
+				topology.getQueues().getEmail(),
 				envelope,
 				channel,
 				deliveryTag,
