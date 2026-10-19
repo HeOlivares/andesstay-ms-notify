@@ -30,7 +30,7 @@ class AsyncNotificationFlowTest {
 	void setUp() {
 		rabbitTemplate = mock(RabbitTemplate.class);
 		publisher = new NotificationPublisher(rabbitTemplate);
-		delivery = new ReliableDelivery(new ProcessedEventIds(), new DlqRateMeter());
+		delivery = new ReliableDelivery(new ProcessedEventIds(ProcessedEventIds.DEFAULT_TTL), new DlqRateMeter());
 		channel = mock(Channel.class);
 	}
 
