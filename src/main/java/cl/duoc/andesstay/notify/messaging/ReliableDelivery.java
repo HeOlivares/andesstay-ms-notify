@@ -25,19 +25,20 @@ public class ReliableDelivery {
 	public DeliveryResult consume(String queue, NotificationEnvelope envelope, Channel channel, long deliveryTag, Runnable work)
 			throws IOException {
 		dlqRateMeter.attempt();
-		if (processedEventIds.alreadyProcessed(envelope.eventId())) {
+		if (!processedEventIds.tryReserve(envelope.eventId())) {
 			channel.basicAck(deliveryTag, false);
 			return DeliveryResult.DUPLICATE;
 		}
 		try {
 			work.run();
 		} catch (RuntimeException failure) {
+			processedEventIds.release(envelope.eventId());
 			channel.basicNack(deliveryTag, false, false);
 			dlqRateMeter.deadLetter(queue);
 			deadLetterQueues.add(deadLetterQueue(queue));
 			return DeliveryResult.NACK;
 		}
-		processedEventIds.markProcessed(envelope.eventId());
+		processedEventIds.complete(envelope.eventId());
 		channel.basicAck(deliveryTag, false);
 		return DeliveryResult.ACK;
 	}
