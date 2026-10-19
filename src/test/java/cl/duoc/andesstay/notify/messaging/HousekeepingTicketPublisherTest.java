@@ -5,21 +5,24 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
+import cl.duoc.andesstay.notify.config.RabbitTopologyProperties;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
 class HousekeepingTicketPublisherTest {
 
+	private final RabbitTopologyProperties topology = RabbitTopologyProperties.defaults();
 	private final NotificationPublisher publisher = mock(NotificationPublisher.class);
-	private final HousekeepingTicketPublisher tickets = new HousekeepingTicketPublisher(publisher, new ObjectMapper());
+	private final HousekeepingTicketPublisher tickets =
+			new HousekeepingTicketPublisher(publisher, new ObjectMapper(), topology);
 
 	@Test
 	void preparationTicketIsOnlyEnqueued() {
 		tickets.publish(new HousekeepingTicketRequest("10", "U-4", "PREPARATION", "trace-1", "corr-1"));
 
 		NotificationEnvelope envelope = published();
-		assertEquals(HousekeepingTicketPublisher.ROUTING_KEY, envelope.type());
+		assertEquals(topology.getRoutingKeys().getHousekeeping(), envelope.type());
 		assertEquals("PREPARATION", envelope.payload().get("kind").asText());
 		assertEquals("U-4", envelope.payload().get("unitId").asText());
 		assertEquals("trace-1", envelope.traceId());

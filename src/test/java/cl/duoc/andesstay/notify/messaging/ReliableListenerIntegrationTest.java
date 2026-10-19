@@ -14,7 +14,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-import cl.duoc.andesstay.notify.config.RabbitTopologyConfig;
+import cl.duoc.andesstay.notify.config.RabbitTopologyProperties;
 import cl.duoc.andesstay.notify.delivery.GuestNotification;
 import cl.duoc.andesstay.notify.delivery.GuestNotificationSender;
 import cl.duoc.andesstay.notify.delivery.HousekeepingTicket;
@@ -80,6 +80,9 @@ class ReliableListenerIntegrationTest {
 	private DlqRateMeter dlqRateMeter;
 
 	@Autowired
+	private RabbitTopologyProperties topology;
+
+	@Autowired
 	private MockMvc mockMvc;
 
 	@MockitoBean
@@ -94,23 +97,23 @@ class ReliableListenerIntegrationTest {
 	@BeforeEach
 	void cleanQueuesAndMocks() throws InterruptedException {
 		reset(guestNotificationSender, housekeepingTicketSender, voucherSender);
-		purge(RabbitTopologyConfig.EMAIL_QUEUE);
-		purge(RabbitTopologyConfig.HOUSEKEEPING_QUEUE);
-		purge(RabbitTopologyConfig.VOUCHER_QUEUE);
+		purge(topology.getQueues().getEmail());
+		purge(topology.getQueues().getHousekeeping());
+		purge(topology.getQueues().getVoucher());
 		awaitListenersReady();
 	}
 
 	@Test
 	void emailMessageIsAcknowledgedByTheRealListener() throws Exception {
 		long attemptsBefore = dlqRateMeter.attempts();
-		long deadBefore = dlqRateMeter.deadLetters(RabbitTopologyConfig.EMAIL_QUEUE);
+		long deadBefore = dlqRateMeter.deadLetters(topology.getQueues().getEmail());
 		publisher.publish(email("event-email-ok", "CONFIRMATION"));
 
 		verify(guestNotificationSender, timeout(15_000).times(1)).send(any(GuestNotification.class));
-		awaitEmpty(RabbitTopologyConfig.EMAIL_QUEUE);
-		assertEquals(0, messageCount(ReliableDelivery.deadLetterQueue(RabbitTopologyConfig.EMAIL_QUEUE)));
+		awaitEmpty(topology.getQueues().getEmail());
+		assertEquals(0, messageCount(topology.deadLetterQueue(topology.getQueues().getEmail())));
 		assertEquals(attemptsBefore + 1, dlqRateMeter.attempts());
-		assertEquals(deadBefore, dlqRateMeter.deadLetters(RabbitTopologyConfig.EMAIL_QUEUE));
+		assertEquals(deadBefore, dlqRateMeter.deadLetters(topology.getQueues().getEmail()));
 	}
 
 	@Test
@@ -118,8 +121,8 @@ class ReliableListenerIntegrationTest {
 		publisher.publish(housekeeping("event-hk-ok", "PREPARATION"));
 
 		verify(housekeepingTicketSender, timeout(15_000).times(1)).send(any(HousekeepingTicket.class));
-		awaitEmpty(RabbitTopologyConfig.HOUSEKEEPING_QUEUE);
-		assertEquals(0, messageCount(ReliableDelivery.deadLetterQueue(RabbitTopologyConfig.HOUSEKEEPING_QUEUE)));
+		awaitEmpty(topology.getQueues().getHousekeeping());
+		assertEquals(0, messageCount(topology.deadLetterQueue(topology.getQueues().getHousekeeping())));
 	}
 
 	@Test
@@ -127,8 +130,8 @@ class ReliableListenerIntegrationTest {
 		publisher.publish(voucher("event-voucher-ok", "VOUCHER"));
 
 		verify(voucherSender, timeout(15_000).times(1)).send(any(VoucherDocument.class));
-		awaitEmpty(RabbitTopologyConfig.VOUCHER_QUEUE);
-		assertEquals(0, messageCount(ReliableDelivery.deadLetterQueue(RabbitTopologyConfig.VOUCHER_QUEUE)));
+		awaitEmpty(topology.getQueues().getVoucher());
+		assertEquals(0, messageCount(topology.deadLetterQueue(topology.getQueues().getVoucher())));
 	}
 
 	@Test
@@ -139,15 +142,15 @@ class ReliableListenerIntegrationTest {
 
 		publisher.publish(email("event-email-fail", "CONFIRMATION"));
 
-		awaitCount(ReliableDelivery.deadLetterQueue(RabbitTopologyConfig.EMAIL_QUEUE), 1);
-		assertEquals(0, messageCount(RabbitTopologyConfig.EMAIL_QUEUE));
+		awaitCount(topology.deadLetterQueue(topology.getQueues().getEmail()), 1);
+		assertEquals(0, messageCount(topology.getQueues().getEmail()));
 		assertEquals(attemptsBefore + 1, dlqRateMeter.attempts());
 		assertEquals(deadBefore + 1, dlqRateMeter.deadLetters());
-		assertTrue(dlqRateMeter.deadLetters(RabbitTopologyConfig.EMAIL_QUEUE) >= 1);
+		assertTrue(dlqRateMeter.deadLetters(topology.getQueues().getEmail()) >= 1);
 		assertTrue(dlqRateMeter.rate() > 0d);
 
 		try (Channel channel = connectionFactory.createConnection().createChannel(false)) {
-			GetResponse dead = channel.basicGet(ReliableDelivery.deadLetterQueue(RabbitTopologyConfig.EMAIL_QUEUE), true);
+			GetResponse dead = channel.basicGet(topology.deadLetterQueue(topology.getQueues().getEmail()), true);
 			assertNotNull(dead);
 			assertNotNull(dead.getProps().getHeaders().get("x-death"));
 			assertTrue(new String(dead.getBody(), StandardCharsets.UTF_8).contains("event-email-fail"));
@@ -162,23 +165,23 @@ class ReliableListenerIntegrationTest {
 		publisher.publish(housekeeping("event-hk-fail", "CLEANING"));
 		publisher.publish(voucher("event-voucher-fail", "RECEIPT"));
 
-		awaitCount(ReliableDelivery.deadLetterQueue(RabbitTopologyConfig.HOUSEKEEPING_QUEUE), 1);
-		awaitCount(ReliableDelivery.deadLetterQueue(RabbitTopologyConfig.VOUCHER_QUEUE), 1);
-		assertEquals(0, messageCount(RabbitTopologyConfig.HOUSEKEEPING_QUEUE));
-		assertEquals(0, messageCount(RabbitTopologyConfig.VOUCHER_QUEUE));
+		awaitCount(topology.deadLetterQueue(topology.getQueues().getHousekeeping()), 1);
+		awaitCount(topology.deadLetterQueue(topology.getQueues().getVoucher()), 1);
+		assertEquals(0, messageCount(topology.getQueues().getHousekeeping()));
+		assertEquals(0, messageCount(topology.getQueues().getVoucher()));
 	}
 
 	@Test
 	void sameEventIdIsDeliveredOnlyOnceByTheRealListener() throws Exception {
 		publisher.publish(email("event-dup", "CONFIRMATION"));
 		verify(guestNotificationSender, timeout(15_000).times(1)).send(any(GuestNotification.class));
-		awaitEmpty(RabbitTopologyConfig.EMAIL_QUEUE);
+		awaitEmpty(topology.getQueues().getEmail());
 
 		publisher.publish(email("event-dup", "CONFIRMATION"));
-		awaitEmpty(RabbitTopologyConfig.EMAIL_QUEUE);
+		awaitEmpty(topology.getQueues().getEmail());
 
 		verify(guestNotificationSender, times(1)).send(any(GuestNotification.class));
-		assertEquals(0, messageCount(ReliableDelivery.deadLetterQueue(RabbitTopologyConfig.EMAIL_QUEUE)));
+		assertEquals(0, messageCount(topology.deadLetterQueue(topology.getQueues().getEmail())));
 	}
 
 	@Test
@@ -198,7 +201,7 @@ class ReliableListenerIntegrationTest {
 		publisher.publish(email("event-race", "CONFIRMATION"));
 		release.countDown();
 
-		awaitEmpty(RabbitTopologyConfig.EMAIL_QUEUE);
+		awaitEmpty(topology.getQueues().getEmail());
 		assertEquals(1, runs.get());
 		verify(guestNotificationSender, times(1)).send(any(GuestNotification.class));
 	}
@@ -217,11 +220,11 @@ class ReliableListenerIntegrationTest {
 
 		publisher.publish(email("event-retry", "CONFIRMATION"));
 		assertTrue(failed.await(15, TimeUnit.SECONDS));
-		awaitCount(ReliableDelivery.deadLetterQueue(RabbitTopologyConfig.EMAIL_QUEUE), 1);
+		awaitCount(topology.deadLetterQueue(topology.getQueues().getEmail()), 1);
 
 		publisher.publish(email("event-retry", "CONFIRMATION"));
 		verify(guestNotificationSender, timeout(15_000).times(2)).send(any(GuestNotification.class));
-		awaitEmpty(RabbitTopologyConfig.EMAIL_QUEUE);
+		awaitEmpty(topology.getQueues().getEmail());
 	}
 
 	@Test
@@ -230,14 +233,14 @@ class ReliableListenerIntegrationTest {
 		long deadBefore = dlqRateMeter.deadLetters();
 		doThrow(new IllegalStateException("mail gateway down")).when(guestNotificationSender).send(any());
 		publisher.publish(email("event-metrics", "CONFIRMATION"));
-		awaitCount(ReliableDelivery.deadLetterQueue(RabbitTopologyConfig.EMAIL_QUEUE), 1);
+		awaitCount(topology.deadLetterQueue(topology.getQueues().getEmail()), 1);
 
 		mockMvc.perform(get("/api/notify/metrics/dlq"))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.attempts").value((int) (attemptsBefore + 1)))
 				.andExpect(jsonPath("$.deadLetters").value((int) (deadBefore + 1)))
 				.andExpect(jsonPath("$.rate").isNumber())
-				.andExpect(jsonPath("$.deadLettersByQueue['" + RabbitTopologyConfig.EMAIL_QUEUE + "']").exists());
+				.andExpect(jsonPath("$.deadLettersByQueue['" + topology.getQueues().getEmail() + "']").exists());
 	}
 
 	private NotificationEnvelope email(String eventId, String kind) {
@@ -248,7 +251,7 @@ class ReliableListenerIntegrationTest {
 		payload.put("channel", "EMAIL");
 		payload.put("guestEmail", "ana@andesstay.local");
 		return new NotificationEnvelope(
-				RabbitTopologyConfig.EMAIL_ROUTING_KEY,
+				topology.getRoutingKeys().getEmail(),
 				eventId,
 				Instant.parse("2026-10-19T04:00:00Z"),
 				"trace-1",
@@ -262,7 +265,7 @@ class ReliableListenerIntegrationTest {
 		payload.put("unitId", "U-4");
 		payload.put("kind", kind);
 		return new NotificationEnvelope(
-				RabbitTopologyConfig.HOUSEKEEPING_ROUTING_KEY,
+				topology.getRoutingKeys().getHousekeeping(),
 				eventId,
 				Instant.parse("2026-10-19T04:00:00Z"),
 				"trace-1",
@@ -276,7 +279,7 @@ class ReliableListenerIntegrationTest {
 		payload.put("guestName", "Ana");
 		payload.put("document", document);
 		return new NotificationEnvelope(
-				RabbitTopologyConfig.VOUCHER_ROUTING_KEY,
+				topology.getRoutingKeys().getVoucher(),
 				eventId,
 				Instant.parse("2026-10-19T04:00:00Z"),
 				"trace-1",
@@ -307,16 +310,16 @@ class ReliableListenerIntegrationTest {
 
 	private void purge(String queue) {
 		rabbitAdmin.purgeQueue(queue, false);
-		rabbitAdmin.purgeQueue(ReliableDelivery.deadLetterQueue(queue), false);
+		rabbitAdmin.purgeQueue(topology.deadLetterQueue(queue), false);
 	}
 
 	private void awaitListenersReady() throws InterruptedException {
 		long deadline = System.nanoTime() + Duration.ofSeconds(10).toNanos();
 		while (System.nanoTime() < deadline) {
 			try {
-				messageCount(RabbitTopologyConfig.EMAIL_QUEUE);
-				messageCount(RabbitTopologyConfig.HOUSEKEEPING_QUEUE);
-				messageCount(RabbitTopologyConfig.VOUCHER_QUEUE);
+				messageCount(topology.getQueues().getEmail());
+				messageCount(topology.getQueues().getHousekeeping());
+				messageCount(topology.getQueues().getVoucher());
 				Thread.sleep(200);
 				return;
 			} catch (AssertionError | RuntimeException ignored) {

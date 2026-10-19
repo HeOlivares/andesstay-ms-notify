@@ -5,7 +5,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
-import cl.duoc.andesstay.notify.config.RabbitTopologyConfig;
+import cl.duoc.andesstay.notify.config.RabbitTopologyProperties;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.List;
 import org.junit.jupiter.api.Test;
@@ -13,18 +13,20 @@ import org.mockito.ArgumentCaptor;
 
 class ConfirmedReservationPublisherTest {
 
+	private final RabbitTopologyProperties topology = RabbitTopologyProperties.defaults();
 	private final NotificationPublisher publisher = mock(NotificationPublisher.class);
-	private final ConfirmedReservationPublisher events = new ConfirmedReservationPublisher(publisher, new ObjectMapper());
+	private final ConfirmedReservationPublisher events =
+			new ConfirmedReservationPublisher(publisher, new ObjectMapper(), topology);
 
 	@Test
 	void confirmedReservationEnqueuesEmailAndVoucherWithoutDeliveringThem() {
 		events.publish(notice(true, false, "EMAIL", "ana@andesstay.local", null));
 
 		List<NotificationEnvelope> envelopes = published(2);
-		assertEquals(RabbitTopologyConfig.EMAIL_ROUTING_KEY, envelopes.get(0).type());
+		assertEquals(topology.getRoutingKeys().getEmail(), envelopes.get(0).type());
 		assertEquals("CONFIRMATION", envelopes.get(0).payload().get("kind").asText());
 		assertEquals("EMAIL", envelopes.get(0).payload().get("channel").asText());
-		assertEquals(RabbitTopologyConfig.VOUCHER_ROUTING_KEY, envelopes.get(1).type());
+		assertEquals(topology.getRoutingKeys().getVoucher(), envelopes.get(1).type());
 		assertEquals("VOUCHER", envelopes.get(1).payload().get("document").asText());
 		assertEquals(envelopes.get(0).traceId(), envelopes.get(1).traceId());
 	}
@@ -44,7 +46,7 @@ class ConfirmedReservationPublisherTest {
 
 		List<NotificationEnvelope> envelopes = published(2);
 		assertEquals("RECEIPT", envelopes.get(1).payload().get("document").asText());
-		assertEquals(RabbitTopologyConfig.VOUCHER_ROUTING_KEY, envelopes.get(1).type());
+		assertEquals(topology.getRoutingKeys().getVoucher(), envelopes.get(1).type());
 	}
 
 	private List<NotificationEnvelope> published(int times) {

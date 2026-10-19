@@ -1,5 +1,6 @@
 package cl.duoc.andesstay.notify.messaging;
 
+import cl.duoc.andesstay.notify.config.RabbitTopologyProperties;
 import cl.duoc.andesstay.notify.delivery.HousekeepingTicketService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
@@ -8,14 +9,17 @@ import org.springframework.stereotype.Service;
 @Service
 public class HousekeepingTicketPublisher {
 
-	static final String ROUTING_KEY = "housekeeping.ticket";
-
 	private final NotificationPublisher publisher;
 	private final ObjectMapper objectMapper;
+	private final RabbitTopologyProperties topology;
 
-	public HousekeepingTicketPublisher(NotificationPublisher publisher, ObjectMapper objectMapper) {
+	public HousekeepingTicketPublisher(
+			NotificationPublisher publisher,
+			ObjectMapper objectMapper,
+			RabbitTopologyProperties topology) {
 		this.publisher = publisher;
 		this.objectMapper = objectMapper;
+		this.topology = topology;
 	}
 
 	public void publish(HousekeepingTicketRequest request) {
@@ -33,7 +37,7 @@ public class HousekeepingTicketPublisher {
 		payload.put("unitId", request.unitId());
 		payload.put("kind", request.kind());
 		publisher.publish(NotificationEnvelope.create(
-				ROUTING_KEY,
+				topology.getRoutingKeys().getHousekeeping(),
 				request.traceId(),
 				request.correlationId(),
 				payload));

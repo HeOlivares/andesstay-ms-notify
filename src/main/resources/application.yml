@@ -17,3 +17,21 @@ spring:
 andesstay:
   notify:
     processed-event-ttl: ${PROCESSED_EVENT_TTL:PT24H}
+    topology:
+      exchanges:
+        direct: cmd.direct
+        topic: cmd.topic
+        dead: cmd.dead.dlx
+      queues:
+        email: q.cmd.email
+        housekeeping: q.cmd.housekeeping
+        voucher: q.cmd.voucher
+      routing-keys:
+        email: email.send
+        housekeeping: housekeeping.ticket
+        voucher: voucher.gen
+      topic-patterns:
+        email: "email.*"
+        housekeeping: "housekeeping.#"
+        voucher: "voucher.*"
+      dlq-suffix: ".dlq"

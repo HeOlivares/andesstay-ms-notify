@@ -1,6 +1,6 @@
 package cl.duoc.andesstay.notify.messaging;
 
-import cl.duoc.andesstay.notify.config.RabbitTopologyConfig;
+import cl.duoc.andesstay.notify.config.RabbitTopologyProperties;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.springframework.stereotype.Service;
@@ -16,10 +16,15 @@ public class ConfirmedReservationPublisher {
 
 	private final NotificationPublisher publisher;
 	private final ObjectMapper objectMapper;
+	private final RabbitTopologyProperties topology;
 
-	public ConfirmedReservationPublisher(NotificationPublisher publisher, ObjectMapper objectMapper) {
+	public ConfirmedReservationPublisher(
+			NotificationPublisher publisher,
+			ObjectMapper objectMapper,
+			RabbitTopologyProperties topology) {
 		this.publisher = publisher;
 		this.objectMapper = objectMapper;
+		this.topology = topology;
 	}
 
 	public void publish(ConfirmedReservation reservation) {
@@ -45,7 +50,7 @@ public class ConfirmedReservationPublisher {
 		putIfPresent(email, "guestEmail", reservation.guestEmail());
 		putIfPresent(email, "pushEndpoint", reservation.pushEndpoint());
 		publisher.publish(NotificationEnvelope.create(
-				RabbitTopologyConfig.EMAIL_ROUTING_KEY,
+				topology.getRoutingKeys().getEmail(),
 				reservation.traceId(),
 				reservation.correlationId(),
 				email));
@@ -65,7 +70,7 @@ public class ConfirmedReservationPublisher {
 		payload.put("document", document);
 		putIfPresent(payload, "guestEmail", reservation.guestEmail());
 		publisher.publish(NotificationEnvelope.create(
-				RabbitTopologyConfig.VOUCHER_ROUTING_KEY,
+				topology.getRoutingKeys().getVoucher(),
 				reservation.traceId(),
 				reservation.correlationId(),
 				payload));

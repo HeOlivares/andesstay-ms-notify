@@ -1,6 +1,6 @@
 package cl.duoc.andesstay.notify.messaging;
 
-import cl.duoc.andesstay.notify.config.RabbitTopologyConfig;
+import cl.duoc.andesstay.notify.config.RabbitTopologyProperties;
 import cl.duoc.andesstay.notify.delivery.HousekeepingTicketService;
 import com.rabbitmq.client.Channel;
 import java.io.IOException;
@@ -14,19 +14,24 @@ public class HousekeepingQueueConsumer {
 
 	private final HousekeepingTicketService tickets;
 	private final ReliableDelivery delivery;
+	private final RabbitTopologyProperties topology;
 
-	public HousekeepingQueueConsumer(HousekeepingTicketService tickets, ReliableDelivery delivery) {
+	public HousekeepingQueueConsumer(
+			HousekeepingTicketService tickets,
+			ReliableDelivery delivery,
+			RabbitTopologyProperties topology) {
 		this.tickets = tickets;
 		this.delivery = delivery;
+		this.topology = topology;
 	}
 
-	@RabbitListener(queues = RabbitTopologyConfig.HOUSEKEEPING_QUEUE, ackMode = "MANUAL")
+	@RabbitListener(queues = "${andesstay.notify.topology.queues.housekeeping}", ackMode = "MANUAL")
 	public void onMessage(
 			NotificationEnvelope envelope,
 			Channel channel,
 			@Header(AmqpHeaders.DELIVERY_TAG) long deliveryTag) throws IOException {
 		delivery.consume(
-				RabbitTopologyConfig.HOUSEKEEPING_QUEUE,
+				topology.getQueues().getHousekeeping(),
 				envelope,
 				channel,
 				deliveryTag,
