@@ -1,82 +1,126 @@
 package cl.duoc.andesstay.notify.messaging;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.atLeastOnce;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.verify;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import cl.duoc.andesstay.notify.config.RabbitTopologyConfig;
 import com.rabbitmq.client.Channel;
+import com.rabbitmq.client.GetResponse;
+import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.time.Instant;
-import java.util.ArrayList;
-import java.util.List;
+import java.util.Properties;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.mockito.ArgumentCaptor;
+import org.springframework.amqp.core.Binding;
+import org.springframework.amqp.core.Declarable;
+import org.springframework.amqp.core.Exchange;
+import org.springframework.amqp.core.Queue;
+import org.springframework.amqp.rabbit.connection.CachingConnectionFactory;
+import org.springframework.amqp.rabbit.core.RabbitAdmin;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
+import org.springframework.amqp.support.converter.Jackson2JsonMessageConverter;
+import org.testcontainers.containers.RabbitMQContainer;
+import org.testcontainers.junit.jupiter.Container;
+import org.testcontainers.junit.jupiter.Testcontainers;
 
+@Testcontainers
 class AsyncNotificationFlowTest {
 
-	private RabbitTemplate rabbitTemplate;
+	private static final String EMAIL_QUEUE = "q.cmd.email";
+	private static final String HOUSEKEEPING_QUEUE = "q.cmd.housekeeping";
+	private static final String VOUCHER_QUEUE = "q.cmd.voucher";
+
+	@Container
+	final RabbitMQContainer rabbit = new RabbitMQContainer("rabbitmq:3-alpine");
+
+	private CachingConnectionFactory connectionFactory;
+	private RabbitAdmin admin;
 	private NotificationPublisher publisher;
 	private ReliableDelivery delivery;
-	private Channel channel;
-	private final List<String> delivered = new ArrayList<>();
-	private long nextTag = 1L;
 
 	@BeforeEach
 	void setUp() {
-		rabbitTemplate = mock(RabbitTemplate.class);
-		publisher = new NotificationPublisher(rabbitTemplate);
-		delivery = new ReliableDelivery(new ProcessedEventIds(ProcessedEventIds.DEFAULT_TTL), new DlqRateMeter());
-		channel = mock(Channel.class);
+		connectionFactory = new CachingConnectionFactory(rabbit.getHost(), rabbit.getAmqpPort());
+		admin = new RabbitAdmin(connectionFactory);
+		for (Declarable declarable : new RabbitTopologyConfig().andesStayTopology().getDeclarables()) {
+			if (declarable instanceof Exchange exchange) {
+				admin.declareExchange(exchange);
+			} else if (declarable instanceof Queue queue) {
+				admin.declareQueue(queue);
+			} else if (declarable instanceof Binding binding) {
+				admin.declareBinding(binding);
+			}
+		}
+		purge(EMAIL_QUEUE, HOUSEKEEPING_QUEUE, VOUCHER_QUEUE);
+		RabbitTemplate template = new RabbitTemplate(connectionFactory);
+		template.setMessageConverter(new Jackson2JsonMessageConverter());
+		publisher = new NotificationPublisher(template);
+		delivery = new ReliableDelivery(new ProcessedEventIds(Duration.ofHours(1)), new DlqRateMeter());
+	}
+
+	@AfterEach
+	void tearDown() {
+		if (connectionFactory != null) {
+			connectionFactory.destroy();
+		}
 	}
 
 	@Test
-	void confirmedReservationPublishesBeforeAnyQueueIsConsumed() throws Exception {
+	void confirmedReservationRemainsQueuedUntilEmailAndHousekeepingAreAcknowledged() throws Exception {
 		publishConfirmedReservation(false);
 
-		assertEquals(List.of(), delivered);
-		List<NotificationEnvelope> queued = published();
-		assertEquals(List.of("email.send", "housekeeping.ticket"), types(queued));
+		awaitCount(EMAIL_QUEUE, 1);
+		awaitCount(HOUSEKEEPING_QUEUE, 1);
+		assertEquals(0, messageCount(VOUCHER_QUEUE));
 
-		consume("q.cmd.email", queued.get(0));
-		consume("q.cmd.housekeeping", queued.get(1));
+		acknowledge(EMAIL_QUEUE, "email.send", "event-email");
+		acknowledge(HOUSEKEEPING_QUEUE, "housekeeping.ticket", "event-housekeeping");
 
-		assertEquals(List.of("email.send", "housekeeping.ticket"), delivered);
-		verify(channel).basicAck(1L, false);
-		verify(channel).basicAck(2L, false);
+		assertEquals(0, messageCount(EMAIL_QUEUE));
+		assertEquals(0, messageCount(HOUSEKEEPING_QUEUE));
+		assertEquals(0, messageCount(ReliableDelivery.deadLetterQueue(EMAIL_QUEUE)));
+		assertEquals(0, messageCount(ReliableDelivery.deadLetterQueue(HOUSEKEEPING_QUEUE)));
 	}
 
 	@Test
-	void voucherQueueIsConsumedWhenTheReservationIncludesIt() throws Exception {
+	void voucherIsQueuedOnlyWhenTheReservationIncludesIt() throws Exception {
 		publishConfirmedReservation(true);
 
-		List<NotificationEnvelope> queued = published();
-		assertEquals(List.of("email.send", "housekeeping.ticket", "voucher.gen"), types(queued));
-		for (int index = 0; index < queued.size(); index++) {
-			consume(queueFor(queued.get(index).type()), queued.get(index));
-		}
+		awaitCount(VOUCHER_QUEUE, 1);
+		acknowledge(EMAIL_QUEUE, "email.send", "event-email");
+		acknowledge(HOUSEKEEPING_QUEUE, "housekeeping.ticket", "event-housekeeping");
+		acknowledge(VOUCHER_QUEUE, "voucher.gen", "event-voucher");
 
-		assertEquals(List.of("email.send", "housekeeping.ticket", "voucher.gen"), delivered);
-		verify(channel).basicAck(3L, false);
+		assertEquals(0, messageCount(VOUCHER_QUEUE));
+		assertEquals(0, messageCount(ReliableDelivery.deadLetterQueue(VOUCHER_QUEUE)));
 	}
 
 	@Test
-	void failedConsumptionNacksAndKeepsTheMessageOnThatQueueDlq() throws Exception {
-		publisher.publish(envelope("email.send", "event-email"));
-		NotificationEnvelope queued = published().get(0);
+	void failedEmailIsRoutedByTheBrokerToItsDeadLetterQueue() throws Exception {
+		NotificationEnvelope email = envelope("email.send", "event-failed");
+		publisher.publish(email);
 
-		DeliveryResult result = delivery.consume("q.cmd.email", queued, channel, 4L, () -> {
-			throw new IllegalStateException("mail gateway down");
-		});
+		try (Channel channel = connectionFactory.createConnection().createChannel(false)) {
+			GetResponse response = channel.basicGet(EMAIL_QUEUE, false);
+			assertNotNull(response);
+			assertEquals("email.send", response.getEnvelope().getRoutingKey());
 
-		assertEquals(DeliveryResult.NACK, result);
-		assertEquals(List.of(), delivered);
-		verify(channel).basicNack(4L, false, false);
-		assertEquals(List.of(ReliableDelivery.deadLetterQueue("q.cmd.email")), delivery.deadLetterQueues());
+			DeliveryResult result = delivery.consume(EMAIL_QUEUE, email, channel, response.getEnvelope().getDeliveryTag(), () -> {
+				throw new IllegalStateException("mail gateway down");
+			});
+
+			assertEquals(DeliveryResult.NACK, result);
+			String deadLetterQueue = ReliableDelivery.deadLetterQueue(EMAIL_QUEUE);
+			awaitCount(deadLetterQueue, 1);
+			assertEquals(0, messageCount(EMAIL_QUEUE));
+			GetResponse dead = channel.basicGet(deadLetterQueue, false);
+			assertNotNull(dead);
+			assertNotNull(dead.getProps().getHeaders().get("x-death"));
+			assertTrue(body(dead).contains("event-failed"));
+		}
 	}
 
 	private void publishConfirmedReservation(boolean voucher) {
@@ -87,33 +131,50 @@ class AsyncNotificationFlowTest {
 		}
 	}
 
-	private void consume(String queue, NotificationEnvelope envelope) throws Exception {
-		long tag = nextTag++;
-		DeliveryResult result = delivery.consume(queue, envelope, channel, tag, () -> delivered.add(envelope.type()));
-		assertEquals(DeliveryResult.ACK, result);
+	private void acknowledge(String queue, String routingKey, String eventId) throws Exception {
+		NotificationEnvelope envelope = envelope(routingKey, eventId);
+		try (Channel channel = connectionFactory.createConnection().createChannel(false)) {
+			GetResponse response = channel.basicGet(queue, false);
+			assertNotNull(response);
+			assertEquals(routingKey, response.getEnvelope().getRoutingKey());
+			assertTrue(body(response).contains(eventId));
+			DeliveryResult result = delivery.consume(
+					queue,
+					envelope,
+					channel,
+					response.getEnvelope().getDeliveryTag(),
+					() -> {
+					});
+			assertEquals(DeliveryResult.ACK, result);
+		}
 	}
 
-	private List<NotificationEnvelope> published() {
-		ArgumentCaptor<NotificationEnvelope> captor = ArgumentCaptor.forClass(NotificationEnvelope.class);
-		verify(rabbitTemplate, atLeastOnce()).convertAndSend(eq(RabbitTopologyConfig.DIRECT_EXCHANGE), anyString(), captor.capture());
-		return captor.getAllValues();
+	private void awaitCount(String queue, int expected) throws InterruptedException {
+		long deadline = System.nanoTime() + Duration.ofSeconds(5).toNanos();
+		while (System.nanoTime() < deadline) {
+			if (messageCount(queue) == expected) {
+				return;
+			}
+			Thread.sleep(50);
+		}
+		assertEquals(expected, messageCount(queue));
 	}
 
-	private static List<String> types(List<NotificationEnvelope> envelopes) {
-		return envelopes.stream().map(NotificationEnvelope::type).toList();
+	private int messageCount(String queue) {
+		Properties properties = admin.getQueueProperties(queue);
+		assertNotNull(properties);
+		return Integer.parseInt(String.valueOf(properties.get(RabbitAdmin.QUEUE_MESSAGE_COUNT)));
 	}
 
-	private static String queueFor(String type) {
-		if (type.startsWith("email.")) {
-			return "q.cmd.email";
+	private void purge(String... queues) {
+		for (String queue : queues) {
+			admin.purgeQueue(queue, false);
+			admin.purgeQueue(ReliableDelivery.deadLetterQueue(queue), false);
 		}
-		if (type.startsWith("housekeeping.")) {
-			return "q.cmd.housekeeping";
-		}
-		if (type.startsWith("voucher.")) {
-			return "q.cmd.voucher";
-		}
-		throw new IllegalArgumentException(type);
+	}
+
+	private static String body(GetResponse response) {
+		return new String(response.getBody(), StandardCharsets.UTF_8);
 	}
 
 	private static NotificationEnvelope envelope(String type, String eventId) {
