@@ -1,0 +1,67 @@
+package cl.duoc.andesstay.notify.config;
+
+import java.util.ArrayList;
+import java.util.List;
+import org.springframework.amqp.core.Binding;
+import org.springframework.amqp.core.BindingBuilder;
+import org.springframework.amqp.core.Declarable;
+import org.springframework.amqp.core.Declarables;
+import org.springframework.amqp.core.DirectExchange;
+import org.springframework.amqp.core.Queue;
+import org.springframework.amqp.core.QueueBuilder;
+import org.springframework.amqp.core.TopicExchange;
+import org.springframework.amqp.support.converter.Jackson2JsonMessageConverter;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+
+@Configuration
+public class RabbitTopologyConfig {
+
+	public static final String DIRECT_EXCHANGE = "cmd.direct";
+	public static final String TOPIC_EXCHANGE = "cmd.topic";
+	public static final String DEAD_EXCHANGE = "cmd.dead.dlx";
+
+	@Bean
+	public Declarables andesStayTopology() {
+		DirectExchange direct = new DirectExchange(DIRECT_EXCHANGE, true, false);
+		TopicExchange topic = new TopicExchange(TOPIC_EXCHANGE, true, false);
+		DirectExchange dead = new DirectExchange(DEAD_EXCHANGE, true, false);
+		List<Declarable> declarables = new ArrayList<>();
+		declarables.add(direct);
+		declarables.add(topic);
+		declarables.add(dead);
+		addFlow(declarables, direct, topic, dead, "q.cmd.email", "email.send", "email.*");
+		addFlow(declarables, direct, topic, dead, "q.cmd.housekeeping", "housekeeping.ticket", "housekeeping.#");
+		addFlow(declarables, direct, topic, dead, "q.cmd.voucher", "voucher.gen", "voucher.*");
+		return new Declarables(declarables);
+	}
+
+	@Bean
+	public Jackson2JsonMessageConverter jackson2JsonMessageConverter() {
+		return new Jackson2JsonMessageConverter();
+	}
+
+	private static void addFlow(
+			List<Declarable> declarables,
+			DirectExchange direct,
+			TopicExchange topic,
+			DirectExchange dead,
+			String queueName,
+			String directKey,
+			String topicPattern) {
+		String dlqName = queueName + ".dlq";
+		Queue queue = QueueBuilder.durable(queueName)
+				.deadLetterExchange(DEAD_EXCHANGE)
+				.deadLetterRoutingKey(dlqName)
+				.build();
+		Queue dlq = QueueBuilder.durable(dlqName).build();
+		Binding directBinding = BindingBuilder.bind(queue).to(direct).with(directKey);
+		Binding topicBinding = BindingBuilder.bind(queue).to(topic).with(topicPattern);
+		Binding deadBinding = BindingBuilder.bind(dlq).to(dead).with(dlqName);
+		declarables.add(queue);
+		declarables.add(dlq);
+		declarables.add(directBinding);
+		declarables.add(topicBinding);
+		declarables.add(deadBinding);
+	}
+}
