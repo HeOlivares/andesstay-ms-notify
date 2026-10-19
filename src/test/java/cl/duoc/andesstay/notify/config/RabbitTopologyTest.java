@@ -6,6 +6,7 @@ import static org.mockito.Mockito.verify;
 
 import cl.duoc.andesstay.notify.messaging.NotificationEnvelope;
 import cl.duoc.andesstay.notify.messaging.NotificationPublisher;
+import cl.duoc.andesstay.notify.messaging.ReliableDelivery;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.List;
 import org.junit.jupiter.api.Test;
@@ -77,6 +78,7 @@ class RabbitTopologyTest {
 		Queue queue = queue(queueName);
 		Queue dlq = queue(queueName + ".dlq");
 		assertEquals("cmd.dead.dlx", queue.getArguments().get("x-dead-letter-exchange"));
+		assertEquals(ReliableDelivery.deadLetterQueue(queueName), queue.getArguments().get("x-dead-letter-routing-key"));
 		assertEquals(dlq.getName(), queue.getArguments().get("x-dead-letter-routing-key"));
 		assertFalse(dlq.getArguments().containsKey("x-dead-letter-exchange"));
 		assertEquals(1, bindings(queueName, "cmd.direct", directKey).size());
