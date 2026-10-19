@@ -10,7 +10,10 @@ import org.springframework.amqp.core.DirectExchange;
 import org.springframework.amqp.core.Queue;
 import org.springframework.amqp.core.QueueBuilder;
 import org.springframework.amqp.core.TopicExchange;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import org.springframework.amqp.support.converter.DefaultJackson2JavaTypeMapper;
 import org.springframework.amqp.support.converter.Jackson2JsonMessageConverter;
+import org.springframework.amqp.support.converter.MessageConverter;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
@@ -43,8 +46,12 @@ public class RabbitTopologyConfig {
 	}
 
 	@Bean
-	public Jackson2JsonMessageConverter jackson2JsonMessageConverter() {
-		return new Jackson2JsonMessageConverter();
+	public MessageConverter jackson2JsonMessageConverter(ObjectMapper objectMapper) {
+		Jackson2JsonMessageConverter converter = new Jackson2JsonMessageConverter(objectMapper);
+		DefaultJackson2JavaTypeMapper typeMapper = new DefaultJackson2JavaTypeMapper();
+		typeMapper.setTrustedPackages("cl.duoc.andesstay.notify.messaging");
+		converter.setJavaTypeMapper(typeMapper);
+		return converter;
 	}
 
 	private static void addFlow(
