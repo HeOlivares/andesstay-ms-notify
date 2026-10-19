@@ -1,5 +1,7 @@
 package cl.duoc.andesstay.notify.messaging;
 
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.atomic.LongAdder;
@@ -32,6 +34,12 @@ public class DlqRateMeter {
 	public long deadLetters(String queue) {
 		LongAdder count = deadLettersByQueue.get(queue);
 		return count == null ? 0 : count.sum();
+	}
+
+	public Map<String, Long> deadLettersByQueue() {
+		Map<String, Long> snapshot = new LinkedHashMap<>();
+		deadLettersByQueue.forEach((queue, count) -> snapshot.put(queue, count.sum()));
+		return Map.copyOf(snapshot);
 	}
 
 	public double rate() {
