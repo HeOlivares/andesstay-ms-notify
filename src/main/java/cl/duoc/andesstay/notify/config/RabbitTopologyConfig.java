@@ -19,7 +19,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
 @Configuration
-@EnableConfigurationProperties(RabbitTopologyProperties.class)
+@EnableConfigurationProperties({RabbitTopologyProperties.class, NotifyRetryProperties.class})
 public class RabbitTopologyConfig {
 
 	private final RabbitTopologyProperties topology;

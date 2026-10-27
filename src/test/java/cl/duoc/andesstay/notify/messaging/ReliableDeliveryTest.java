@@ -5,8 +5,10 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
+import cl.duoc.andesstay.notify.config.NotifyRetryProperties;
 import cl.duoc.andesstay.notify.config.RabbitTopologyProperties;
 import com.rabbitmq.client.Channel;
 import java.time.Clock;
@@ -26,12 +28,16 @@ class ReliableDeliveryTest {
 	private ReliableDelivery delivery;
 	private Channel channel;
 	private RabbitTopologyProperties topology;
+	private NotifyRetryProperties retry;
 
 	@BeforeEach
 	void setUp() {
 		meter = new DlqRateMeter();
 		topology = RabbitTopologyProperties.defaults();
-		delivery = new ReliableDelivery(new ProcessedEventIds(ProcessedEventIds.DEFAULT_TTL), meter, topology);
+		retry = NotifyRetryProperties.defaults();
+		retry.setMaxAttempts(3);
+		retry.setBackoffMs(0);
+		delivery = new ReliableDelivery(new ProcessedEventIds(ProcessedEventIds.DEFAULT_TTL), meter, topology, retry);
 		channel = mock(Channel.class);
 	}
 
@@ -93,10 +99,65 @@ class ReliableDeliveryTest {
 			runs.incrementAndGet();
 			throw new IllegalStateException("temporary");
 		});
-		DeliveryResult retry = delivery.consume("q.cmd.email", envelope("event-retry"), channel, 4L, runs::incrementAndGet);
+		DeliveryResult retryResult = delivery.consume("q.cmd.email", envelope("event-retry"), channel, 4L, runs::incrementAndGet);
 
-		assertEquals(DeliveryResult.ACK, retry);
+		assertEquals(DeliveryResult.ACK, retryResult);
 		assertEquals(2, runs.get());
+	}
+
+	@Test
+	void recoverableFailsTwiceThenSucceedsAcksAfterThreeWorkCalls() throws Exception {
+		AtomicInteger runs = new AtomicInteger();
+		DeliveryResult result = delivery.consume("q.cmd.email", envelope("event-rec-ok"), channel, 20L, () -> {
+			if (runs.incrementAndGet() < 3) {
+				throw new RecoverableDeliveryException("transient gateway");
+			}
+		});
+
+		assertEquals(DeliveryResult.ACK, result);
+		assertEquals(3, runs.get());
+		verify(channel).basicAck(20L, false);
+		verify(channel, never()).basicNack(20L, false, false);
+	}
+
+	@Test
+	void recoverableAlwaysFailsExhaustsAttemptsAndNacks() throws Exception {
+		AtomicInteger runs = new AtomicInteger();
+		DeliveryResult result = delivery.consume("q.cmd.email", envelope("event-rec-fail"), channel, 21L, () -> {
+			runs.incrementAndGet();
+			throw new RecoverableDeliveryException("always down");
+		});
+
+		assertEquals(DeliveryResult.NACK, result);
+		assertEquals(3, runs.get());
+		verify(channel, times(1)).basicNack(21L, false, false);
+		verify(channel, never()).basicAck(21L, false);
+		assertEquals(List.of("q.cmd.email.dlq"), delivery.deadLetterQueues());
+	}
+
+	@Test
+	void nonRecoverableFailsOnceAndNacks() throws Exception {
+		AtomicInteger runs = new AtomicInteger();
+		DeliveryResult result = delivery.consume("q.cmd.email", envelope("event-non-rec"), channel, 22L, () -> {
+			runs.incrementAndGet();
+			throw new IllegalStateException("poison payload");
+		});
+
+		assertEquals(DeliveryResult.NACK, result);
+		assertEquals(1, runs.get());
+		verify(channel).basicNack(22L, false, false);
+		verify(channel, never()).basicAck(22L, false);
+	}
+
+	@Test
+	void duplicateMessageAcksWithoutRunningWork() throws Exception {
+		AtomicInteger runs = new AtomicInteger();
+		delivery.consume("q.cmd.email", envelope("event-dup"), channel, 30L, runs::incrementAndGet);
+		DeliveryResult duplicate = delivery.consume("q.cmd.email", envelope("event-dup"), channel, 31L, runs::incrementAndGet);
+
+		assertEquals(DeliveryResult.DUPLICATE, duplicate);
+		assertEquals(1, runs.get());
+		verify(channel).basicAck(31L, false);
 	}
 
 	@Test
