@@ -2,16 +2,20 @@ package cl.duoc.andesstay.notify.config;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.verify;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import cl.duoc.andesstay.notify.messaging.NotificationEnvelope;
 import cl.duoc.andesstay.notify.messaging.NotificationPublisher;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.List;
+import java.util.Set;
+import java.util.stream.Collectors;
 import org.junit.jupiter.api.Test;
 import org.springframework.amqp.core.Binding;
-import org.springframework.amqp.core.Declarable;
-import org.springframework.amqp.core.Declarables;
 import org.springframework.amqp.core.Exchange;
 import org.springframework.amqp.core.Queue;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
@@ -21,16 +25,18 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
-
 @SpringBootTest(properties = "spring.autoconfigure.exclude=org.springframework.boot.autoconfigure.amqp.RabbitAutoConfiguration")
 @AutoConfigureMockMvc
 class RabbitTopologyTest {
 
 	@Autowired
-	private Declarables topology;
+	private List<Exchange> exchanges;
+
+	@Autowired
+	private List<Queue> queues;
+
+	@Autowired
+	private List<Binding> bindings;
 
 	@Autowired
 	private RabbitTopologyProperties names;
@@ -58,7 +64,7 @@ class RabbitTopologyTest {
 	@Test
 	void declaresAndesStayExchangesQueuesAndDeadLetters() {
 		assertEquals(
-				List.of(
+				Set.of(
 						names.getExchanges().getDirect(),
 						names.getExchanges().getTopic(),
 						names.getExchanges().getDead()),
@@ -87,7 +93,7 @@ class RabbitTopologyTest {
 		String json = objectMapper.writeValueAsString(envelope);
 		assertFalse(json.contains("\"type\":\"\""));
 		for (String field : List.of("type", "eventId", "timestamp", "traceId", "correlationId")) {
-			org.junit.jupiter.api.Assertions.assertTrue(json.contains("\"" + field + "\""), field);
+			assertTrue(json.contains("\"" + field + "\""), field);
 		}
 	}
 
@@ -111,31 +117,22 @@ class RabbitTopologyTest {
 		assertEquals(1, bindings(dlq.getName(), names.getExchanges().getDead(), dlq.getName()).size());
 	}
 
-	private List<String> exchangeNames() {
-		return topology.getDeclarables().stream()
-				.filter(Exchange.class::isInstance)
-				.map(Exchange.class::cast)
-				.map(Exchange::getName)
-				.toList();
+	private Set<String> exchangeNames() {
+		return exchanges.stream().map(Exchange::getName).collect(Collectors.toSet());
 	}
 
 	private Queue queue(String name) {
-		return topology.getDeclarables().stream()
-				.filter(Queue.class::isInstance)
-				.map(Queue.class::cast)
+		return queues.stream()
 				.filter(queue -> queue.getName().equals(name))
 				.findFirst()
-				.orElseThrow();
+				.orElseThrow(() -> new AssertionError("missing queue " + name));
 	}
 
-	private List<Declarable> bindings(String queueName, String exchange, String routingKey) {
-		return topology.getDeclarables().stream()
-				.filter(Binding.class::isInstance)
-				.map(Binding.class::cast)
+	private List<Binding> bindings(String queueName, String exchange, String routingKey) {
+		return bindings.stream()
 				.filter(binding -> queueName.equals(binding.getDestination()))
 				.filter(binding -> exchange.equals(binding.getExchange()))
 				.filter(binding -> routingKey.equals(binding.getRoutingKey()))
-				.map(Declarable.class::cast)
 				.toList();
 	}
 }
