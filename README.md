@@ -42,15 +42,20 @@ Exchanges: `cmd.direct`, `cmd.topic`, `cmd.dead.dlx`.
 
 ## ACK / NACK
 
-Los tres `@RabbitListener` usan `ackMode = MANUAL` y delegan en `ReliableDelivery`:
+Los tres `@RabbitListener` usan `ackMode = MANUAL` y delegan en `ReliableDelivery`.
+La reserva del `eventId` ocurre **una sola vez** al inicio. Reintentos in-process ante
+`RecoverableDeliveryException` (config: `andesstay.notify.retry.max-attempts` / `backoff-ms`).
+Los senders deben lanzar esa excepción en fallos transitorios; cualquier otra `RuntimeException` es no recuperable.
 
-1. Se reserva el `eventId` de forma atómica.
-2. Se ejecuta el trabajo del dominio (`GuestNotificationService`, `HousekeepingTicketService` o `VoucherService`).
-3. Si termina bien: se completa la reserva y se hace `basicAck`.
-4. Si falla: se libera la reserva y se hace `basicNack(..., requeue=false)`.
-5. Si el `eventId` ya está reservado o procesado: `basicAck` sin volver a ejecutar el trabajo.
+| Situación | Acción | Resultado |
+| --- | --- | --- |
+| Trabajo OK | `basicAck` | Procesado |
+| `RecoverableDeliveryException`, intentos &lt; N | Log `RETRY attempt=x/N`, espera `backoff-ms`, reintenta | Sigue en la misma entrega |
+| `RecoverableDeliveryException`, agotados N | Libera `eventId`, `basicNack(..., requeue=false)` | DLQ (`reasonKind=exhausted`) |
+| Otra `RuntimeException` | Libera `eventId`, `basicNack(..., requeue=false)` sin reintento | DLQ (`reasonKind=non-recoverable`) |
+| `eventId` ya reservado/procesado | `basicAck` sin ejecutar el trabajo | Duplicado ignorado |
 
-También queda configurado:
+También:
 
 ```yaml
 spring.rabbitmq.listener.simple.acknowledge-mode: manual

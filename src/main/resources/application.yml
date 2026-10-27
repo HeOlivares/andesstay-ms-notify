@@ -17,6 +17,9 @@ spring:
 andesstay:
   notify:
     processed-event-ttl: ${PROCESSED_EVENT_TTL:PT24H}
+    retry:
+      max-attempts: ${NOTIFY_RETRY_MAX_ATTEMPTS:3}
+      backoff-ms: ${NOTIFY_RETRY_BACKOFF_MS:200}
     topology:
       exchanges:
         direct: cmd.direct
