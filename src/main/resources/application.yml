@@ -29,10 +29,12 @@ andesstay:
         email: q.cmd.email
         housekeeping: q.cmd.housekeeping
         voucher: q.cmd.voucher
+        cabin-ready: q.cmd.cabin.ready
       routing-keys:
         email: email.send
         housekeeping: housekeeping.ticket
         voucher: voucher.gen
+        cabin-ready: cabin.ready
       topic-patterns:
         email: "email.*"
         housekeeping: "housekeeping.#"

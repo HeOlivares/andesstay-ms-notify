@@ -37,12 +37,13 @@ Defaults actuales:
 | `q.cmd.email` | `email.send` | `q.cmd.email.dlq` |
 | `q.cmd.housekeeping` | `housekeeping.ticket` | `q.cmd.housekeeping.dlq` |
 | `q.cmd.voucher` | `voucher.gen` | `q.cmd.voucher.dlq` |
+| `q.cmd.cabin.ready` | `cabin.ready` | `q.cmd.cabin.ready.dlq` |
 
 Exchanges: `cmd.direct`, `cmd.topic`, `cmd.dead.dlx`.
 
 ## ACK / NACK
 
-Los tres `@RabbitListener` usan `ackMode = MANUAL` y delegan en `ReliableDelivery`.
+Los `@RabbitListener` usan `ackMode = MANUAL` y delegan en `ReliableDelivery`.
 La reserva del `eventId` ocurre **una sola vez** al inicio. Reintentos in-process ante
 `RecoverableDeliveryException` (config: `andesstay.notify.retry.max-attempts` / `backoff-ms`).
 Los senders deben lanzar esa excepción en fallos transitorios; cualquier otra `RuntimeException` es no recuperable.

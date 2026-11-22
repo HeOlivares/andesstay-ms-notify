@@ -81,6 +81,7 @@ class RabbitTopologyTest {
 				names.getQueues().getVoucher(),
 				names.getRoutingKeys().getVoucher(),
 				names.getTopicPatterns().getVoucher());
+		assertDirectQueueWithDlq(names.getQueues().getCabinReady(), names.getRoutingKeys().getCabinReady());
 	}
 
 	@Test
@@ -102,7 +103,20 @@ class RabbitTopologyTest {
 		assertEquals("cmd.direct", names.getExchanges().getDirect());
 		assertEquals("q.cmd.email", names.getQueues().getEmail());
 		assertEquals("email.send", names.getRoutingKeys().getEmail());
+		assertEquals("q.cmd.cabin.ready", names.getQueues().getCabinReady());
+		assertEquals("cabin.ready", names.getRoutingKeys().getCabinReady());
 		assertEquals(".dlq", names.getDlqSuffix());
+	}
+
+	private void assertDirectQueueWithDlq(String queueName, String directKey) {
+		Queue queue = queue(queueName);
+		Queue dlq = queue(names.deadLetterQueue(queueName));
+		assertEquals(names.getExchanges().getDead(), queue.getArguments().get("x-dead-letter-exchange"));
+		assertEquals(dlq.getName(), queue.getArguments().get("x-dead-letter-routing-key"));
+		assertFalse(dlq.getArguments().containsKey("x-dead-letter-exchange"));
+		assertEquals(1, bindings(queueName, names.getExchanges().getDirect(), directKey).size());
+		assertEquals(0, bindings(queueName, names.getExchanges().getTopic(), directKey).size());
+		assertEquals(1, bindings(dlq.getName(), names.getExchanges().getDead(), dlq.getName()).size());
 	}
 
 	private void assertQueueWithDlq(String queueName, String directKey, String topicPattern) {
