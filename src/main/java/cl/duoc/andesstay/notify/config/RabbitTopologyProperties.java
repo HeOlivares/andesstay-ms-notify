@@ -69,9 +69,11 @@ public class RabbitTopologyProperties {
 		topology.getQueues().setEmail("q.cmd.email");
 		topology.getQueues().setHousekeeping("q.cmd.housekeeping");
 		topology.getQueues().setVoucher("q.cmd.voucher");
+		topology.getQueues().setCabinReady("q.cmd.cabin.ready");
 		topology.getRoutingKeys().setEmail("email.send");
 		topology.getRoutingKeys().setHousekeeping("housekeeping.ticket");
 		topology.getRoutingKeys().setVoucher("voucher.gen");
+		topology.getRoutingKeys().setCabinReady("cabin.ready");
 		topology.getTopicPatterns().setEmail("email.*");
 		topology.getTopicPatterns().setHousekeeping("housekeeping.#");
 		topology.getTopicPatterns().setVoucher("voucher.*");
@@ -113,6 +115,7 @@ public class RabbitTopologyProperties {
 		private String email;
 		private String housekeeping;
 		private String voucher;
+		private String cabinReady;
 
 		public String getEmail() {
 			return email;
@@ -136,6 +139,14 @@ public class RabbitTopologyProperties {
 
 		public void setVoucher(String voucher) {
 			this.voucher = voucher;
+		}
+
+		public String getCabinReady() {
+			return cabinReady;
+		}
+
+		public void setCabinReady(String cabinReady) {
+			this.cabinReady = cabinReady;
 		}
 	}
 
@@ -143,6 +154,7 @@ public class RabbitTopologyProperties {
 		private String email;
 		private String housekeeping;
 		private String voucher;
+		private String cabinReady;
 
 		public String getEmail() {
 			return email;
@@ -166,6 +178,14 @@ public class RabbitTopologyProperties {
 
 		public void setVoucher(String voucher) {
 			this.voucher = voucher;
+		}
+
+		public String getCabinReady() {
+			return cabinReady;
+		}
+
+		public void setCabinReady(String cabinReady) {
+			this.cabinReady = cabinReady;
 		}
 	}
 
