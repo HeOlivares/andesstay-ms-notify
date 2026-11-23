@@ -16,7 +16,8 @@ public class ReservationActivityListener {
 
 	@KafkaListener(
 			topics = "${andesstay.notify.kafka.activity-topic:reservations.activity}",
-			groupId = "${spring.kafka.consumer.group-id:notify-activity}")
+			groupId = "${spring.kafka.consumer.group-id:notify-activity}",
+			concurrency = "${andesstay.notify.kafka.activity-concurrency:3}")
 	public void onActivity(ReservationActivity activity) {
 		recorder.record(activity);
 	}
