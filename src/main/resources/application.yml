@@ -13,9 +13,22 @@ spring:
       simple:
         acknowledge-mode: manual
         default-requeue-rejected: false
+  kafka:
+    bootstrap-servers: ${SPRING_KAFKA_BOOTSTRAP_SERVERS:kafka:29092}
+    consumer:
+      group-id: ${SPRING_KAFKA_CONSUMER_GROUP_ID:notify-activity}
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
+      properties:
+        spring.json.trusted.packages: cl.duoc.andesstay.notify.activity
+        spring.json.use.type.headers: false
+        spring.json.value.default.type: cl.duoc.andesstay.notify.activity.ReservationActivity
 
 andesstay:
   notify:
+    kafka:
+      activity-topic: reservations.activity
     processed-event-ttl: ${PROCESSED_EVENT_TTL:PT24H}
     retry:
       max-attempts: ${NOTIFY_RETRY_MAX_ATTEMPTS:3}
