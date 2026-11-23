@@ -30,6 +30,7 @@ andesstay:
   notify:
     kafka:
       activity-topic: reservations.activity
+      activity-concurrency: 3
       max-attempts: 3
       backoff-ms: 200
     processed-event-ttl: ${PROCESSED_EVENT_TTL:PT24H}
