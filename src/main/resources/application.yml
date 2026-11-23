@@ -19,8 +19,9 @@ spring:
       group-id: ${SPRING_KAFKA_CONSUMER_GROUP_ID:notify-activity}
       auto-offset-reset: earliest
       key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
-      value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
+      value-deserializer: org.springframework.kafka.support.serializer.ErrorHandlingDeserializer
       properties:
+        spring.deserializer.value.delegate.class: org.springframework.kafka.support.serializer.JsonDeserializer
         spring.json.trusted.packages: cl.duoc.andesstay.notify.activity
         spring.json.use.type.headers: false
         spring.json.value.default.type: cl.duoc.andesstay.notify.activity.ReservationActivity
@@ -29,6 +30,8 @@ andesstay:
   notify:
     kafka:
       activity-topic: reservations.activity
+      max-attempts: 3
+      backoff-ms: 200
     processed-event-ttl: ${PROCESSED_EVENT_TTL:PT24H}
     retry:
       max-attempts: ${NOTIFY_RETRY_MAX_ATTEMPTS:3}
